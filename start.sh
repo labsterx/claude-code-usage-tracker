@@ -13,13 +13,7 @@ if [ ! -d "node_modules" ]; then
     echo ""
 fi
 
-# Parse real Claude Code data
-echo "🔍 Parsing Claude Code data from ~/.claude/..."
-echo ""
-node parse-real-data.js
-echo ""
-
-# Start the server
-echo "🚀 Starting server..."
+# Start the server (auto-parsing handled by server)
+echo "🚀 Starting server (auto-parse enabled)..."
 echo ""
 node server.js

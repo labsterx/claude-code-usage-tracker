@@ -2,12 +2,16 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const readline = require('readline');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Data storage file
 const DATA_FILE = 'usage_data.json';
+const CLAUDE_DIR = path.join(os.homedir(), '.claude');
+const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 
 // Middleware
 app.use(cors());
@@ -326,13 +330,167 @@ app.get('/api/sessions/:sessionId', (req, res) => {
   }
 });
 
+// Auto-parse all existing sessions on first run
+async function autoParseIfNeeded() {
+  // Check if data file exists and has sessions
+  if (fs.existsSync(DATA_FILE)) {
+    const data = readData();
+    if (data.sessions && data.sessions.length > 0) {
+      console.log(`✓ Found existing data: ${data.sessions.length} sessions`);
+      return false; // Already parsed
+    }
+  }
+
+  // Check if Claude directory exists
+  if (!fs.existsSync(PROJECTS_DIR)) {
+    console.log('⚠️  ~/.claude/projects not found - no data to parse');
+    return false;
+  }
+
+  console.log('');
+  console.log('╔═══════════════════════════════════════════════════╗');
+  console.log('║   First Run: Parsing Existing Conversations      ║');
+  console.log('╚═══════════════════════════════════════════════════╝');
+  console.log('');
+
+  let usageData = {
+    sessions: [],
+    messages: [],
+    tool_usage: [],
+    file_edits: []
+  };
+
+  async function parseJSONLFile(filePath, sessionId) {
+    const fileStream = fs.createReadStream(filePath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+
+    let stats = {
+      messages: 0,
+      toolUses: 0,
+      toolCounts: {}
+    };
+
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+
+      try {
+        const entry = JSON.parse(line);
+        const timestamp = entry.timestamp || new Date().toISOString();
+
+        if (entry.type === 'user' || entry.type === 'assistant') {
+          stats.messages++;
+          usageData.messages.push({
+            session_id: sessionId,
+            role: entry.type,
+            content_length: JSON.stringify(entry.message?.content || '').length,
+            timestamp
+          });
+        }
+
+        if (entry.message && entry.message.content) {
+          for (const block of entry.message.content) {
+            if (block.type === 'tool_use') {
+              stats.toolUses++;
+              const toolName = block.name;
+              stats.toolCounts[toolName] = (stats.toolCounts[toolName] || 0) + 1;
+
+              usageData.tool_usage.push({
+                session_id: sessionId,
+                tool_name: toolName,
+                description: JSON.stringify(block.input).substring(0, 100),
+                success: true,
+                timestamp
+              });
+
+              if (toolName === 'Write' || toolName === 'Edit') {
+                const filePath = block.input?.file_path;
+                if (filePath) {
+                  usageData.file_edits.push({
+                    session_id: sessionId,
+                    file_path: filePath,
+                    operation: toolName.toLowerCase(),
+                    lines_changed: toolName === 'Edit' ? 10 : 0,
+                    timestamp
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Skip invalid lines
+      }
+    }
+
+    return stats;
+  }
+
+  const projectDirs = fs.readdirSync(PROJECTS_DIR);
+  let totalStats = {
+    projects: 0,
+    sessions: 0,
+    messages: 0,
+    toolUses: 0
+  };
+
+  for (const projectDir of projectDirs) {
+    if (projectDir.startsWith('.')) continue;
+
+    const projectPath = path.join(PROJECTS_DIR, projectDir);
+    const stat = fs.statSync(projectPath);
+    if (!stat.isDirectory()) continue;
+
+    totalStats.projects++;
+    const sessionFiles = fs.readdirSync(projectPath).filter(f => f.endsWith('.jsonl'));
+
+    for (const sessionFile of sessionFiles) {
+      const sessionPath = path.join(projectPath, sessionFile);
+      const sessionStats = fs.statSync(sessionPath);
+
+      if (sessionStats.size === 0) continue;
+
+      const sessionId = sessionFile.replace('.jsonl', '');
+      totalStats.sessions++;
+
+      try {
+        const stats = await parseJSONLFile(sessionPath, sessionId);
+
+        usageData.sessions.push({
+          session_id: sessionId,
+          project: projectDir.replace(/-/g, '/'),
+          file_size: sessionStats.size,
+          created: sessionStats.birthtime.toISOString(),
+          modified: sessionStats.mtime.toISOString()
+        });
+
+        totalStats.messages += stats.messages;
+        totalStats.toolUses += stats.toolUses;
+
+        process.stdout.write('.');
+      } catch (e) {
+        // Skip errors
+      }
+    }
+  }
+
+  // Save parsed data
+  writeData(usageData);
+
+  console.log('\n');
+  console.log(`✓ Parsed ${totalStats.sessions} sessions`);
+  console.log(`  Messages: ${totalStats.messages}`);
+  console.log(`  Tool uses: ${totalStats.toolUses}`);
+  console.log('');
+
+  return true; // Did parse
+}
+
 // Start watcher for real-time monitoring
 function startWatcher() {
   const chokidar = require('chokidar');
-  const os = require('os');
-  const readline = require('readline');
-
-  const PROJECTS_DIR = path.join(os.homedir(), '.claude/projects');
 
   if (!fs.existsSync(PROJECTS_DIR)) {
     console.log('⚠️  ~/.claude/projects not found - skipping watcher');
@@ -445,12 +603,16 @@ function startWatcher() {
 
 // Start server
 initData();
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════╗');
   console.log('║   Claude Code Usage Tracker - Node.js Edition    ║');
   console.log('╚═══════════════════════════════════════════════════╝');
   console.log('');
+
+  // Auto-parse if needed
+  await autoParseIfNeeded();
+
   console.log(`🚀 Dashboard: http://localhost:${PORT}`);
   console.log(`📊 API: http://localhost:${PORT}/api`);
   console.log('');

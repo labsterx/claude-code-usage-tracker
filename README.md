@@ -29,30 +29,35 @@ A lightweight Node.js web application that parses your local Claude Code data (s
 # Clone or download this repository
 cd claude-log
 
-# Install dependencies
+# Install dependencies and start
 npm install
-
-# Parse your Claude Code data and start server
-./start.sh
+npm start
 ```
 
-Or manually:
-
-```bash
-npm install
-npm run parse    # Parse existing data from ~/.claude/ (writes to usage_data.json)
-npm start        # Start server (loads data + enables real-time monitoring)
-```
-
-**Open your browser:** http://localhost:5000
+**That's it!** Open your browser: http://localhost:5000
 
 ### How It Works Now
 
-1. **Initial Parse**: Run `npm run parse` once - this reads all existing conversations and writes to `usage_data.json` (no server needed)
-2. **Start Server**: Run `npm start` - loads the data file and starts real-time monitoring
-3. **Real-Time Updates**: Server automatically detects new conversations in `~/.claude/` as you use Claude Code
-4. **Auto-Refresh**: Dashboard updates every 30 seconds to show latest data
-5. **Re-run Parse**: If you want to re-process all data, just run `npm run parse` again (it's now standalone!)
+1. **First Run**: When you start the server, it automatically detects if data needs parsing
+2. **Auto-Parse**: Reads all existing conversations from `~/.claude/` and builds the database
+3. **Subsequent Runs**: Loads existing data instantly - no re-parsing needed
+4. **Real-Time Updates**: Server monitors `~/.claude/` for new conversations automatically
+5. **Dashboard**: Updates every 30 seconds to show latest activity
+
+### Manual Re-parse (Optional)
+
+If you want to force a full re-parse of all data:
+
+```bash
+rm usage_data.json    # Delete existing data
+npm start             # Will auto-parse on startup
+```
+
+Or use the standalone parser:
+
+```bash
+npm run parse         # Parses data without starting server
+```
 
 ## 📊 Dashboard Features
 
@@ -185,15 +190,16 @@ From actual usage:
 - **Project Insights** - Compare activity across different projects
 - **Time Analysis** - Understand your peak usage times
 
-## 🔄 Updating Data
+## 🔄 Data Updates
 
-To refresh with latest conversations:
+**Automatic**: The server monitors `~/.claude/` in real-time and detects new conversations automatically!
 
+**Dashboard**: Auto-refreshes every 30 seconds to display latest data.
+
+**Manual Re-parse** (if needed):
 ```bash
-npm run parse
+rm usage_data.json && npm start
 ```
-
-The dashboard auto-refreshes every 30 seconds while open.
 
 ## 🛠️ Tech Stack
 
@@ -204,21 +210,19 @@ The dashboard auto-refreshes every 30 seconds while open.
 
 ## 🐛 Troubleshooting
 
-**Getting "ECONNRESET" or "Status: 403" errors when running `npm run parse`?**
-- **This is expected!** The parser now works standalone (no server required)
-- Simply run: `npm run parse` (it will write directly to `usage_data.json`)
-- Then start the server: `npm start`
-- The old version required the server to be running first - that's been fixed!
-
-**No data showing?**
+**No data showing on dashboard?**
 ```bash
-# Ensure Claude Code has been used
+# Check if Claude Code has created data
 ls ~/.claude/projects/
 
-# Re-parse data
+# Force a full re-parse
 rm usage_data.json
-npm run parse
 npm start
+```
+
+**Want to manually parse without starting server?**
+```bash
+npm run parse    # Standalone parser, writes to usage_data.json
 ```
 
 **Port 5000 in use?**
