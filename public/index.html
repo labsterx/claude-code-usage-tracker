@@ -52,14 +52,14 @@
         </div>
 
         <div class="info-section">
-            <h3>Setup Instructions</h3>
-            <p>To start tracking your Claude Code usage, add this hook to your Claude Code settings:</p>
-            <pre><code>{
-  "hooks": {
-    "onToolUse": "curl -X POST http://localhost:5000/api/log -H 'Content-Type: application/json' -d '{\"type\": \"tool_usage\", \"tool_name\": \"$TOOL_NAME\", \"session_id\": \"$SESSION_ID\"}'"
-  }
-}</code></pre>
-            <p><small>Note: This is a proof-of-concept. Full integration would require a Claude Code extension or MCP server.</small></p>
+            <h3>How It Works</h3>
+            <p>This dashboard reads your real Claude Code conversation history from <code>~/.claude/projects/</code> and visualizes your usage patterns.</p>
+            <ul style="text-align: left; max-width: 600px; margin: 10px auto;">
+                <li><strong>Auto-parsing:</strong> Server automatically parses existing conversations on first run</li>
+                <li><strong>Real-time monitoring:</strong> Detects new conversations as you use Claude Code</li>
+                <li><strong>Auto-refresh:</strong> Dashboard updates every 30 seconds</li>
+                <li><strong>No setup required:</strong> Works directly with Claude Code's local data files</li>
+            </ul>
         </div>
     </div>
 
