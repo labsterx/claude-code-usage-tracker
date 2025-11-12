@@ -84,12 +84,12 @@ Each session card shows:
 
 ```
 claude-log/
-├── server.js              # Express server (main application)
-├── parse-real-data.js     # Parses ~/.claude/ conversation data
-├── collector.js           # VSCode workspace scanner (informational)
+├── server.js              # Express server with auto-parse and real-time monitoring
+├── parse-real-data.js     # Standalone parser for ~/.claude/ data (optional)
+├── watcher.js             # Standalone file watcher (optional)
+├── collector.js           # VSCode workspace scanner (legacy)
 ├── generate-data.js       # Sample data generator (for testing)
-├── package.json           # Dependencies
-├── start.sh               # One-command startup script
+├── package.json           # Dependencies and npm scripts
 ├── public/                # Frontend files
 │   ├── index.html        # Dashboard UI
 │   ├── css/style.css     # Styling with gradient design
