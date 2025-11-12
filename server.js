@@ -1,0 +1,342 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Data storage file
+const DATA_FILE = 'usage_data.json';
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+
+// Initialize data storage
+function initData() {
+  if (!fs.existsSync(DATA_FILE)) {
+    const initialData = {
+      sessions: [],
+      tool_usage: [],
+      file_edits: [],
+      messages: [],
+      vscode_data: []
+    };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
+  }
+}
+
+function readData() {
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (error) {
+    return { sessions: [], tool_usage: [], file_edits: [], messages: [], vscode_data: [] };
+  }
+}
+
+function writeData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+// API Routes
+
+// Serve the dashboard
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Log events
+app.post('/api/log', (req, res) => {
+  try {
+    const { type, session_id = 'default', ...eventData } = req.body;
+    const data = readData();
+    const timestamp = new Date().toISOString();
+
+    if (type === 'tool_usage') {
+      data.tool_usage.push({
+        session_id,
+        timestamp,
+        tool_name: eventData.tool_name,
+        description: eventData.description || '',
+        success: eventData.success !== false
+      });
+    }
+    else if (type === 'file_edit') {
+      data.file_edits.push({
+        session_id,
+        timestamp,
+        file_path: eventData.file_path,
+        operation: eventData.operation,
+        lines_changed: eventData.lines_changed || 0
+      });
+    }
+    else if (type === 'message') {
+      data.messages.push({
+        session_id,
+        timestamp,
+        role: eventData.role,
+        content_length: eventData.content_length || 0
+      });
+    }
+    else if (type === 'vscode_data') {
+      data.vscode_data.push({
+        timestamp,
+        workspace_id: eventData.workspace_id,
+        data_type: eventData.data_type,
+        data: eventData.data
+      });
+    }
+    else if (type === 'session') {
+      // Check if session already exists
+      if (!data.sessions) data.sessions = [];
+      const existingIndex = data.sessions.findIndex(s => s.session_id === session_id);
+      if (existingIndex >= 0) {
+        data.sessions[existingIndex] = {
+          ...data.sessions[existingIndex],
+          ...eventData,
+          session_id
+        };
+      } else {
+        data.sessions.push({
+          session_id,
+          ...eventData
+        });
+      }
+    }
+
+    writeData(data);
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Error logging event:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// Get overview statistics
+app.get('/api/stats/overview', (req, res) => {
+  try {
+    const data = readData();
+
+    const totalTools = data.tool_usage.length;
+    const totalEdits = data.file_edits.length;
+    const totalMessages = data.messages.length;
+
+    // Count tool usage
+    const toolCounts = {};
+    data.tool_usage.forEach(item => {
+      toolCounts[item.tool_name] = (toolCounts[item.tool_name] || 0) + 1;
+    });
+
+    const topTools = Object.entries(toolCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    res.json({
+      total_tools: totalTools,
+      total_edits: totalEdits,
+      total_messages: totalMessages,
+      top_tools: topTools
+    });
+  } catch (error) {
+    console.error('Error getting overview:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get tool usage statistics
+app.get('/api/stats/tools', (req, res) => {
+  try {
+    const data = readData();
+
+    const toolCounts = {};
+    data.tool_usage.forEach(item => {
+      toolCounts[item.tool_name] = (toolCounts[item.tool_name] || 0) + 1;
+    });
+
+    const tools = Object.entries(toolCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json(tools);
+  } catch (error) {
+    console.error('Error getting tool stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get usage timeline
+app.get('/api/stats/timeline', (req, res) => {
+  try {
+    const data = readData();
+
+    const dateCounts = {};
+    data.tool_usage.forEach(item => {
+      const date = item.timestamp.split('T')[0];
+      dateCounts[date] = (dateCounts[date] || 0) + 1;
+    });
+
+    const timeline = Object.entries(dateCounts)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 30);
+
+    res.json(timeline);
+  } catch (error) {
+    console.error('Error getting timeline:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get file statistics
+app.get('/api/stats/files', (req, res) => {
+  try {
+    const data = readData();
+
+    const fileCounts = {};
+    const fileLines = {};
+
+    data.file_edits.forEach(item => {
+      fileCounts[item.file_path] = (fileCounts[item.file_path] || 0) + 1;
+      fileLines[item.file_path] = (fileLines[item.file_path] || 0) + item.lines_changed;
+    });
+
+    const files = Object.keys(fileCounts)
+      .map(path => ({
+        path,
+        edits: fileCounts[path],
+        lines: fileLines[path]
+      }))
+      .sort((a, b) => b.edits - a.edits)
+      .slice(0, 20);
+
+    res.json(files);
+  } catch (error) {
+    console.error('Error getting file stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get VSCode workspace data
+app.get('/api/vscode/workspaces', (req, res) => {
+  try {
+    const data = readData();
+    res.json(data.vscode_data);
+  } catch (error) {
+    console.error('Error getting workspace data:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all sessions
+app.get('/api/sessions', (req, res) => {
+  try {
+    const data = readData();
+
+    // Group messages and tools by session
+    const sessionMap = {};
+
+    // Count messages per session
+    data.messages.forEach(msg => {
+      if (!sessionMap[msg.session_id]) {
+        sessionMap[msg.session_id] = {
+          session_id: msg.session_id,
+          message_count: 0,
+          tool_count: 0,
+          file_count: 0,
+          first_timestamp: msg.timestamp,
+          last_timestamp: msg.timestamp
+        };
+      }
+      sessionMap[msg.session_id].message_count++;
+      if (msg.timestamp < sessionMap[msg.session_id].first_timestamp) {
+        sessionMap[msg.session_id].first_timestamp = msg.timestamp;
+      }
+      if (msg.timestamp > sessionMap[msg.session_id].last_timestamp) {
+        sessionMap[msg.session_id].last_timestamp = msg.timestamp;
+      }
+    });
+
+    // Count tools per session
+    data.tool_usage.forEach(tool => {
+      if (sessionMap[tool.session_id]) {
+        sessionMap[tool.session_id].tool_count++;
+      }
+    });
+
+    // Count files per session
+    data.file_edits.forEach(file => {
+      if (sessionMap[file.session_id]) {
+        sessionMap[file.session_id].file_count++;
+      }
+    });
+
+    // Add session metadata if available
+    if (data.sessions) {
+      data.sessions.forEach(session => {
+        if (sessionMap[session.session_id]) {
+          sessionMap[session.session_id] = {
+            ...sessionMap[session.session_id],
+            ...session
+          };
+        }
+      });
+    }
+
+    const sessions = Object.values(sessionMap)
+      .sort((a, b) => new Date(b.last_timestamp) - new Date(a.last_timestamp));
+
+    res.json(sessions);
+  } catch (error) {
+    console.error('Error getting sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get session details
+app.get('/api/sessions/:sessionId', (req, res) => {
+  try {
+    const data = readData();
+    const sessionId = req.params.sessionId;
+
+    const messages = data.messages.filter(m => m.session_id === sessionId);
+    const tools = data.tool_usage.filter(t => t.session_id === sessionId);
+    const files = data.file_edits.filter(f => f.session_id === sessionId);
+
+    // Find session metadata
+    const sessionMeta = data.sessions?.find(s => s.session_id === sessionId) || {};
+
+    res.json({
+      session_id: sessionId,
+      ...sessionMeta,
+      messages,
+      tools,
+      files,
+      stats: {
+        total_messages: messages.length,
+        total_tools: tools.length,
+        total_files: files.length
+      }
+    });
+  } catch (error) {
+    console.error('Error getting session details:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start server
+initData();
+app.listen(PORT, () => {
+  console.log('');
+  console.log('╔═══════════════════════════════════════════════════╗');
+  console.log('║   Claude Code Usage Tracker - Node.js Edition    ║');
+  console.log('╚═══════════════════════════════════════════════════╝');
+  console.log('');
+  console.log(`🚀 Dashboard: http://localhost:${PORT}`);
+  console.log(`📊 API: http://localhost:${PORT}/api`);
+  console.log('');
+  console.log('Press Ctrl+C to stop the server');
+  console.log('');
+});

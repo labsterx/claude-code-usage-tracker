@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Usage Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Claude Code Usage Tracker</h1>
+            <p class="subtitle">Track and visualize your AI coding assistant usage - Real VSCode Data</p>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-tools">0</div>
+                <div class="stat-label">Total Tools Used</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-edits">0</div>
+                <div class="stat-label">Files Edited</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-messages">0</div>
+                <div class="stat-label">Messages Exchanged</div>
+            </div>
+        </div>
+
+        <div class="charts-container">
+            <div class="chart-card">
+                <h2>Tool Usage Distribution</h2>
+                <canvas id="toolsChart"></canvas>
+            </div>
+
+            <div class="chart-card">
+                <h2>Usage Timeline (Last 30 Days)</h2>
+                <canvas id="timelineChart"></canvas>
+            </div>
+
+            <div class="chart-card full-width">
+                <h2>Most Edited Files</h2>
+                <div id="files-list"></div>
+            </div>
+
+            <div class="chart-card full-width">
+                <h2>Chat Sessions</h2>
+                <div id="sessions-list"></div>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h3>Setup Instructions</h3>
+            <p>To start tracking your Claude Code usage, add this hook to your Claude Code settings:</p>
+            <pre><code>{
+  "hooks": {
+    "onToolUse": "curl -X POST http://localhost:5000/api/log -H 'Content-Type: application/json' -d '{\"type\": \"tool_usage\", \"tool_name\": \"$TOOL_NAME\", \"session_id\": \"$SESSION_ID\"}'"
+  }
+}</code></pre>
+            <p><small>Note: This is a proof-of-concept. Full integration would require a Claude Code extension or MCP server.</small></p>
+        </div>
+    </div>
+
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>
