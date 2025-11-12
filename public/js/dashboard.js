@@ -2,6 +2,7 @@
 
 let toolsChart = null;
 let timelineChart = null;
+let tokenTimelineChart = null;
 
 // Helper function to format large numbers
 function formatNumber(num) {
@@ -91,6 +92,101 @@ async function loadToolsChart() {
         });
     } catch (error) {
         console.error('Error loading tools chart:', error);
+    }
+}
+
+// Fetch and display token usage timeline chart
+async function loadTokenTimelineChart() {
+    try {
+        const response = await fetch('/api/stats/token-timeline');
+        const data = await response.json();
+
+        const ctx = document.getElementById('tokenTimelineChart').getContext('2d');
+
+        if (tokenTimelineChart) {
+            tokenTimelineChart.destroy();
+        }
+
+        tokenTimelineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(item => item.date),
+                datasets: [
+                    {
+                        label: 'Input Tokens',
+                        data: data.map(item => item.input_tokens),
+                        borderColor: '#43e97b',
+                        backgroundColor: 'rgba(67, 233, 123, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    },
+                    {
+                        label: 'Output Tokens',
+                        data: data.map(item => item.output_tokens),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            padding: 15,
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.dataset.label || '';
+                                const value = context.parsed.y || 0;
+                                return `${label}: ${formatNumber(value)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatNumber(value);
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Tokens'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error loading token timeline chart:', error);
     }
 }
 
@@ -255,6 +351,7 @@ async function loadSessions() {
 async function initDashboard() {
     await loadOverview();
     await loadToolsChart();
+    await loadTokenTimelineChart();
     await loadTimelineChart();
     await loadFileStats();
     await loadSessions();
@@ -263,6 +360,7 @@ async function initDashboard() {
     setInterval(() => {
         loadOverview();
         loadToolsChart();
+        loadTokenTimelineChart();
         loadTimelineChart();
         loadFileStats();
         loadSessions();

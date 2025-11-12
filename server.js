@@ -215,6 +215,40 @@ app.get('/api/stats/timeline', (req, res) => {
   }
 });
 
+// Get token usage timeline
+app.get('/api/stats/token-timeline', (req, res) => {
+  try {
+    const data = readData();
+
+    const dateTokens = {};
+    if (data.token_usage) {
+      data.token_usage.forEach(item => {
+        const date = item.timestamp.split('T')[0];
+        if (!dateTokens[date]) {
+          dateTokens[date] = { input: 0, output: 0 };
+        }
+        dateTokens[date].input += item.input_tokens || 0;
+        dateTokens[date].output += item.output_tokens || 0;
+      });
+    }
+
+    const timeline = Object.entries(dateTokens)
+      .map(([date, tokens]) => ({
+        date,
+        input_tokens: tokens.input,
+        output_tokens: tokens.output,
+        total_tokens: tokens.input + tokens.output
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-30); // Last 30 days
+
+    res.json(timeline);
+  } catch (error) {
+    console.error('Error getting token timeline:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get file statistics
 app.get('/api/stats/files', (req, res) => {
   try {
