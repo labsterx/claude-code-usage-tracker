@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const http = require('http');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
+const DATA_FILE = path.join(__dirname, 'usage_data.json');
 
 console.log('');
 console.log('╔═══════════════════════════════════════════════════╗');
@@ -13,32 +13,27 @@ console.log('║   Parsing REAL Claude Code Conversation Data     ║');
 console.log('╚═══════════════════════════════════════════════════╝');
 console.log('');
 
-async function sendToAPI(data) {
-  return new Promise((resolve, reject) => {
-    const postData = JSON.stringify(data);
-    const options = {
-      hostname: 'localhost',
-      port: 5000,
-      path: '/api/log',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
-      }
-    };
+// Initialize or load existing data
+let usageData = {
+  sessions: [],
+  messages: [],
+  tool_usage: [],
+  file_edits: []
+};
 
-    const req = http.request(options, (res) => {
-      if (res.statusCode === 200) {
-        resolve();
-      } else {
-        reject(new Error(`Status: ${res.statusCode}`));
-      }
-    });
+if (fs.existsSync(DATA_FILE)) {
+  try {
+    usageData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (e) {
+    console.log('⚠️  Could not read existing data, starting fresh');
+  }
+}
 
-    req.on('error', reject);
-    req.write(postData);
-    req.end();
-  });
+// Track what we've already processed
+const existingSessions = new Set(usageData.sessions.map(s => s.session_id));
+
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(usageData, null, 2));
 }
 
 async function parseJSONLFile(filePath, sessionId) {
@@ -51,11 +46,7 @@ async function parseJSONLFile(filePath, sessionId) {
   let stats = {
     messages: 0,
     toolUses: 0,
-    reads: 0,
-    writes: 0,
-    edits: 0,
-    bash: 0,
-    errors: 0
+    toolCounts: {}
   };
 
   for await (const line of rl) {
@@ -63,17 +54,17 @@ async function parseJSONLFile(filePath, sessionId) {
 
     try {
       const entry = JSON.parse(line);
+      const timestamp = entry.timestamp || new Date().toISOString();
 
       // Count messages
       if (entry.type === 'user' || entry.type === 'assistant') {
         stats.messages++;
 
-        // Send message to API
-        await sendToAPI({
-          type: 'message',
+        usageData.messages.push({
           session_id: sessionId,
           role: entry.type,
-          content_length: JSON.stringify(entry.message?.content || '').length
+          content_length: JSON.stringify(entry.message?.content || '').length,
+          timestamp
         });
       }
 
@@ -84,27 +75,26 @@ async function parseJSONLFile(filePath, sessionId) {
             stats.toolUses++;
 
             const toolName = block.name;
-            stats[toolName.toLowerCase()] = (stats[toolName.toLowerCase()] || 0) + 1;
+            stats.toolCounts[toolName] = (stats.toolCounts[toolName] || 0) + 1;
 
-            // Send to API
-            await sendToAPI({
-              type: 'tool_usage',
+            usageData.tool_usage.push({
               session_id: sessionId,
               tool_name: toolName,
               description: JSON.stringify(block.input).substring(0, 100),
-              success: true
+              success: true,
+              timestamp
             });
 
             // If it's a file operation, track it
             if (toolName === 'Write' || toolName === 'Edit') {
               const filePath = block.input?.file_path;
               if (filePath) {
-                await sendToAPI({
-                  type: 'file_edit',
+                usageData.file_edits.push({
                   session_id: sessionId,
                   file_path: filePath,
                   operation: toolName.toLowerCase(),
-                  lines_changed: toolName === 'Edit' ? 10 : 0
+                  lines_changed: toolName === 'Edit' ? 10 : 0,
+                  timestamp
                 });
               }
             }
@@ -112,7 +102,7 @@ async function parseJSONLFile(filePath, sessionId) {
         }
       }
     } catch (e) {
-      stats.errors++;
+      // Skip invalid lines
     }
   }
 
@@ -130,9 +120,9 @@ async function parseAllSessions() {
   let totalStats = {
     projects: 0,
     sessions: 0,
+    newSessions: 0,
     messages: 0,
-    toolUses: 0,
-    files: {}
+    toolUses: 0
   };
 
   for (const projectDir of projectDirs) {
@@ -156,15 +146,21 @@ async function parseAllSessions() {
       const sessionId = sessionFile.replace('.jsonl', '');
       totalStats.sessions++;
 
+      // Skip if already processed
+      if (existingSessions.has(sessionId)) {
+        console.log(`  ⏭️  Session: ${sessionId} (already processed)`);
+        continue;
+      }
+
+      totalStats.newSessions++;
       console.log(`  📄 Session: ${sessionId}`);
       console.log(`     Size: ${(sessionStats.size / 1024).toFixed(1)} KB`);
 
       try {
         const stats = await parseJSONLFile(sessionPath, sessionId);
 
-        // Send session metadata
-        await sendToAPI({
-          type: 'session',
+        // Add session metadata
+        usageData.sessions.push({
           session_id: sessionId,
           project: projectDir.replace(/-/g, '/'),
           file_size: sessionStats.size,
@@ -175,32 +171,42 @@ async function parseAllSessions() {
         console.log(`     Messages: ${stats.messages}`);
         console.log(`     Tool uses: ${stats.toolUses}`);
 
-        if (stats.read) console.log(`       Read: ${stats.read}`);
-        if (stats.write) console.log(`       Write: ${stats.write}`);
-        if (stats.edit) console.log(`       Edit: ${stats.edit}`);
-        if (stats.bash) console.log(`       Bash: ${stats.bash}`);
-        if (stats.glob) console.log(`       Glob: ${stats.glob}`);
-        if (stats.grep) console.log(`       Grep: ${stats.grep}`);
+        // Show tool breakdown
+        for (const [tool, count] of Object.entries(stats.toolCounts)) {
+          console.log(`       ${tool}: ${count}`);
+        }
 
         totalStats.messages += stats.messages;
         totalStats.toolUses += stats.toolUses;
 
-        console.log(`     ✓ Sent to API\n`);
+        console.log(`     ✓ Parsed successfully\n`);
       } catch (e) {
         console.log(`     ✗ Error parsing: ${e.message}\n`);
       }
     }
   }
 
+  // Save all data to file
+  saveData();
+
   console.log('═══════════════════════════════════════════════════');
   console.log('Total Statistics:');
   console.log(`  Projects: ${totalStats.projects}`);
-  console.log(`  Sessions: ${totalStats.sessions}`);
+  console.log(`  Total Sessions: ${totalStats.sessions}`);
+  console.log(`  New Sessions Parsed: ${totalStats.newSessions}`);
   console.log(`  Messages: ${totalStats.messages}`);
   console.log(`  Tool uses: ${totalStats.toolUses}`);
   console.log('═══════════════════════════════════════════════════\n');
-  console.log('✓ All real data imported!');
-  console.log('  Open http://localhost:5000 to view your REAL usage!\n');
+
+  if (totalStats.newSessions > 0) {
+    console.log(`✓ Parsed ${totalStats.newSessions} new session(s)!`);
+    console.log(`  Data saved to: ${DATA_FILE}`);
+  } else {
+    console.log('✓ All sessions already processed!');
+  }
+
+  console.log('  Start server with: npm start');
+  console.log('  Then open: http://localhost:5000\n');
 }
 
 parseAllSessions().catch(console.error);
