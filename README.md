@@ -8,6 +8,7 @@ A lightweight Node.js web application that parses your local Claude Code data (s
 
 - 👀 **Real-Time Monitoring** - Automatically detects and parses new conversations as they happen!
 - 📊 **Real Data Analytics** - Parses actual Claude Code conversation files (`.jsonl` format)
+- 💰 **Token Usage Tracking** - Monitor input/output tokens and prompt caching efficiency
 - 🎨 **Beautiful Dashboard** - Responsive web UI with Chart.js visualizations
 - 💬 **Session Tracking** - View all your chat sessions with detailed statistics
 - 🔧 **Tool Usage Breakdown** - See which tools you use most (Bash, Write, Edit, etc.)
@@ -65,6 +66,9 @@ npm run parse         # Parses data without starting server
 - Total tools used across all sessions
 - Files edited count
 - Messages exchanged with Claude
+- Input tokens (context sent to Claude)
+- Output tokens (Claude's responses)
+- Total tokens used
 
 ### Interactive Charts
 1. **Tool Usage Distribution** - Doughnut chart showing Read, Write, Edit, Bash, etc.

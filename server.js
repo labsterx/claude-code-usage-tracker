@@ -26,7 +26,8 @@ function initData() {
       tool_usage: [],
       file_edits: [],
       messages: [],
-      vscode_data: []
+      vscode_data: [],
+      token_usage: []
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
   }
@@ -36,7 +37,7 @@ function readData() {
   try {
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } catch (error) {
-    return { sessions: [], tool_usage: [], file_edits: [], messages: [], vscode_data: [] };
+    return { sessions: [], tool_usage: [], file_edits: [], messages: [], vscode_data: [], token_usage: [] };
   }
 }
 
@@ -127,6 +128,25 @@ app.get('/api/stats/overview', (req, res) => {
     const totalEdits = data.file_edits.length;
     const totalMessages = data.messages.length;
 
+    // Calculate token usage
+    const tokenStats = {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 0
+    };
+
+    if (data.token_usage) {
+      data.token_usage.forEach(item => {
+        tokenStats.input_tokens += item.input_tokens || 0;
+        tokenStats.output_tokens += item.output_tokens || 0;
+        tokenStats.cache_read_tokens += item.cache_read_input_tokens || 0;
+        tokenStats.cache_write_tokens += item.cache_creation_input_tokens || 0;
+      });
+      tokenStats.total_tokens = tokenStats.input_tokens + tokenStats.output_tokens;
+    }
+
     // Count tool usage
     const toolCounts = {};
     data.tool_usage.forEach(item => {
@@ -142,6 +162,7 @@ app.get('/api/stats/overview', (req, res) => {
       total_tools: totalTools,
       total_edits: totalEdits,
       total_messages: totalMessages,
+      tokens: tokenStats,
       top_tools: topTools
     });
   } catch (error) {
@@ -357,7 +378,8 @@ async function autoParseIfNeeded() {
     sessions: [],
     messages: [],
     tool_usage: [],
-    file_edits: []
+    file_edits: [],
+    token_usage: []
   };
 
   async function parseJSONLFile(filePath, sessionId) {
@@ -388,6 +410,19 @@ async function autoParseIfNeeded() {
             content_length: JSON.stringify(entry.message?.content || '').length,
             timestamp
           });
+
+          // Extract token usage from assistant messages
+          if (entry.type === 'assistant' && entry.message?.usage) {
+            const usage = entry.message.usage;
+            usageData.token_usage.push({
+              session_id: sessionId,
+              input_tokens: usage.input_tokens || 0,
+              output_tokens: usage.output_tokens || 0,
+              cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+              cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+              timestamp
+            });
+          }
         }
 
         if (entry.message && entry.message.content) {

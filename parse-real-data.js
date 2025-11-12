@@ -18,7 +18,8 @@ let usageData = {
   sessions: [],
   messages: [],
   tool_usage: [],
-  file_edits: []
+  file_edits: [],
+  token_usage: []
 };
 
 if (fs.existsSync(DATA_FILE)) {
@@ -66,6 +67,28 @@ async function parseJSONLFile(filePath, sessionId) {
           content_length: JSON.stringify(entry.message?.content || '').length,
           timestamp
         });
+
+        // Extract token usage from assistant messages
+        if (entry.type === 'assistant' && entry.message?.usage) {
+          const usage = entry.message.usage;
+          usageData.token_usage.push({
+            session_id: sessionId,
+            input_tokens: usage.input_tokens || 0,
+            output_tokens: usage.output_tokens || 0,
+            cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+            cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+            timestamp
+          });
+
+          // Track in stats
+          if (!stats.tokens) {
+            stats.tokens = { input: 0, output: 0, cached_read: 0, cached_write: 0 };
+          }
+          stats.tokens.input += usage.input_tokens || 0;
+          stats.tokens.output += usage.output_tokens || 0;
+          stats.tokens.cached_read += usage.cache_read_input_tokens || 0;
+          stats.tokens.cached_write += usage.cache_creation_input_tokens || 0;
+        }
       }
 
       // Parse tool uses

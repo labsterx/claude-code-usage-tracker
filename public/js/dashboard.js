@@ -3,6 +3,16 @@
 let toolsChart = null;
 let timelineChart = null;
 
+// Helper function to format large numbers
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toLocaleString();
+}
+
 // Fetch and display overview stats
 async function loadOverview() {
     try {
@@ -12,6 +22,13 @@ async function loadOverview() {
         document.getElementById('total-tools').textContent = data.total_tools;
         document.getElementById('total-edits').textContent = data.total_edits;
         document.getElementById('total-messages').textContent = data.total_messages;
+
+        // Update token usage
+        if (data.tokens) {
+            document.getElementById('input-tokens').textContent = formatNumber(data.tokens.input_tokens);
+            document.getElementById('output-tokens').textContent = formatNumber(data.tokens.output_tokens);
+            document.getElementById('total-tokens').textContent = formatNumber(data.tokens.total_tokens);
+        }
     } catch (error) {
         console.error('Error loading overview:', error);
     }
