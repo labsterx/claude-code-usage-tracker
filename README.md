@@ -6,6 +6,7 @@ A lightweight Node.js web application that parses your local Claude Code data (s
 
 ## ✨ Features
 
+- 👀 **Real-Time Monitoring** - Automatically detects and parses new conversations as they happen!
 - 📊 **Real Data Analytics** - Parses actual Claude Code conversation files (`.jsonl` format)
 - 🎨 **Beautiful Dashboard** - Responsive web UI with Chart.js visualizations
 - 💬 **Session Tracking** - View all your chat sessions with detailed statistics
@@ -39,11 +40,18 @@ Or manually:
 
 ```bash
 npm install
-npm run parse    # Parse real data from ~/.claude/
-npm start        # Start the server
+npm run parse    # One-time: Parse existing data from ~/.claude/
+npm start        # Start server with real-time monitoring
 ```
 
 **Open your browser:** http://localhost:5000
+
+### How It Works Now
+
+1. **Initial Load**: Run `npm run parse` once to load existing conversation history
+2. **Real-Time Updates**: The server automatically monitors `~/.claude/` for new conversations
+3. **Auto-Refresh**: Dashboard updates every 30 seconds to show new data
+4. **No Manual Steps**: New conversations are detected and parsed automatically!
 
 ## 📊 Dashboard Features
 

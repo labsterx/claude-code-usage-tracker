@@ -326,6 +326,123 @@ app.get('/api/sessions/:sessionId', (req, res) => {
   }
 });
 
+// Start watcher for real-time monitoring
+function startWatcher() {
+  const chokidar = require('chokidar');
+  const os = require('os');
+  const readline = require('readline');
+
+  const PROJECTS_DIR = path.join(os.homedir(), '.claude/projects');
+
+  if (!fs.existsSync(PROJECTS_DIR)) {
+    console.log('⚠️  ~/.claude/projects not found - skipping watcher');
+    return;
+  }
+
+  console.log('👀 Real-time watcher: ENABLED');
+
+  let processing = new Set();
+
+  async function processFile(filePath) {
+    if (processing.has(filePath)) return;
+    if (!filePath.endsWith('.jsonl')) return;
+
+    processing.add(filePath);
+
+    try {
+      const stats = fs.statSync(filePath);
+      if (stats.size === 0) return;
+
+      const sessionId = path.basename(filePath, '.jsonl');
+      const projectDir = path.basename(path.dirname(filePath));
+
+      const fileStream = fs.createReadStream(filePath);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+
+      const data = readData();
+      let newMessages = 0;
+      let newTools = 0;
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+
+        try {
+          const entry = JSON.parse(line);
+
+          if (entry.type === 'user' || entry.type === 'assistant') {
+            data.messages.push({
+              session_id: sessionId,
+              timestamp: new Date().toISOString(),
+              role: entry.type,
+              content_length: JSON.stringify(entry.message?.content || '').length
+            });
+            newMessages++;
+          }
+
+          if (entry.message && entry.message.content) {
+            for (const block of entry.message.content) {
+              if (block.type === 'tool_use') {
+                const toolName = block.name;
+                data.tool_usage.push({
+                  session_id: sessionId,
+                  timestamp: new Date().toISOString(),
+                  tool_name: toolName,
+                  description: JSON.stringify(block.input).substring(0, 100),
+                  success: true
+                });
+                newTools++;
+
+                if (toolName === 'Write' || toolName === 'Edit') {
+                  const filePath = block.input?.file_path;
+                  if (filePath) {
+                    data.file_edits.push({
+                      session_id: sessionId,
+                      timestamp: new Date().toISOString(),
+                      file_path: filePath,
+                      operation: toolName.toLowerCase(),
+                      lines_changed: 10
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Skip invalid lines
+        }
+      }
+
+      if (newMessages > 0 || newTools > 0) {
+        writeData(data);
+        console.log(`📝 Updated: ${sessionId} (+${newMessages} msg, +${newTools} tools)`);
+      }
+
+    } catch (error) {
+      // Silently skip errors
+    } finally {
+      setTimeout(() => processing.delete(filePath), 5000);
+    }
+  }
+
+  const watcher = chokidar.watch(PROJECTS_DIR, {
+    ignored: /(^|[\/\\])\../,
+    persistent: true,
+    ignoreInitial: true,
+    depth: 2,
+    awaitWriteFinish: {
+      stabilityThreshold: 2000,
+      pollInterval: 500
+    }
+  });
+
+  watcher
+    .on('change', processFile)
+    .on('add', processFile);
+}
+
 // Start server
 initData();
 app.listen(PORT, () => {
@@ -336,6 +453,11 @@ app.listen(PORT, () => {
   console.log('');
   console.log(`🚀 Dashboard: http://localhost:${PORT}`);
   console.log(`📊 API: http://localhost:${PORT}/api`);
+  console.log('');
+
+  // Start real-time watcher
+  startWatcher();
+
   console.log('');
   console.log('Press Ctrl+C to stop the server');
   console.log('');

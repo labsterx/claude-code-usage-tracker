@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "collect": "node collector.js",
-    "parse": "node parse-real-data.js"
+    "parse": "node parse-real-data.js",
+    "watch": "node watcher.js"
   },
   "keywords": ["claude-code", "analytics", "tracking", "vscode"],
   "author": "",
